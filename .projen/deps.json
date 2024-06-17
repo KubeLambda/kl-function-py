@@ -6,6 +6,10 @@
       "type": "devenv"
     },
     {
+      "name": "aws-lambda-typing==2.20.0",
+      "type": "runtime"
+    },
+    {
       "name": "rocketmq-client-python==2.0.0",
       "type": "runtime"
     },

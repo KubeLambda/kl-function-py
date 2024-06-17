@@ -1,3 +1,4 @@
+from aws_lambda_typing import context as context_
 import importlib.util
 
 file_path = '/home/lambda/lambda_handler.py'
@@ -14,5 +15,5 @@ if spec:
 else:
     raise Exception("No 'lambda_handler.py' was found")
 
-def invoke(event, context):
+def invoke(event, context: context_.Context) -> None:
     module.lambda_handler(event, context)
