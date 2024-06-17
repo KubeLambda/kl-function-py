@@ -7,5 +7,6 @@ project = PythonProject(
     name="function-python",
     version="0.1.0",
 )
-
+project.add_git_ignore(".mise.toml")
+project.add_dependency("rocketmq-client-python==2.0.0")
 project.synth()
