@@ -84,4 +84,5 @@ dmypy.json
 .pytype/
 cython_debug/
 .mise.toml
+.secrets.yaml
 !/.projenrc.py

@@ -110,12 +110,7 @@
     },
     "test": {
       "name": "test",
-      "description": "Run tests",
-      "steps": [
-        {
-          "exec": "pytest"
-        }
-      ]
+      "description": "Run tests"
     }
   },
   "env": {
