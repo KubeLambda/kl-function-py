@@ -17,6 +17,8 @@ class GoLikeFormatter(logging.Formatter):
             "module": record.module,
             "lineno": record.lineno
         }
+        if record.exc_info:
+            record_dict['msg'] = repr(super().formatException(record.exc_info))
         return f"{record_dict['time']}\t{record_dict['level']}\t{record_dict['module']}:{record_dict['lineno']}\t{record_dict['msg']}"
 
 class JsonFormatter(logging.Formatter):

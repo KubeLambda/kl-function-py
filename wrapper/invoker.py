@@ -2,7 +2,7 @@ from aws_lambda_typing import context as context_
 import importlib.util
 import logging
 import json
-from typing import Optional
+from typing import Any, Optional
 from config import settings
 
 file_path = settings.handler.path # '/home/lambda/lambda_handler.py'
@@ -19,11 +19,14 @@ if spec:
 else:
     raise Exception("No 'lambda_handler.py' was found")
 
-def invoke(event, context: Optional[context_.Context]) -> Optional[bytes]:
+def invoke(event: Any, context: Optional[context_.Context]) -> Optional[bytes]:
+    event_obj = event
+    if type(event) is str:
+        event_obj = json.loads(event)
     try:
-        response = module.lambda_handler(event, context)
+        response = module.lambda_handler(event_obj, context)
         if response:
             message = json.dumps(response).encode()
             return message
     except Exception as exc:
-        logging.error("Invokation error", exc_info = exc)
+        logging.exception("Invokation error", exc_info = exc)

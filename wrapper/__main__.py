@@ -55,14 +55,14 @@ async def main():
         subject = message.subject
         reply = message.reply
         data = message.data.decode()
-        logging.info(
+        logging.debug(
             "Received a message on '%s %s' %s", subject, reply, data
         )
         start = timeit.default_timer()
         response = invoke(data, None)
         id = subject.split('.')[1]
         if not id:
-            logging.warn("Can't retrieve id from %s", message.subject)
+            logging.warning("Can't retrieve id from %s", message.subject)
             return
         response_subject = f"{response_subject_prefix}.{id}"
         logging.debug("Response to %s", response_subject)
@@ -71,7 +71,7 @@ async def main():
             await js.publish(response_subject, response)
             await message.ack()
             end = timeit.default_timer()
-            logging.info("Processed request %s in time %f", message, end-start)
+            logging.info("Processed request in time %f", end-start)
         else:
             logging.warn("Response from function is None")
 
