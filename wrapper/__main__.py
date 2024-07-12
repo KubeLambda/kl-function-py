@@ -1,47 +1,95 @@
-from rocketmq.client import PushConsumer, ConsumeStatus, Producer, Message, SendResult
+import asyncio
+import timeit
+import signal
+import logging
+import asyncio
+from typing import List
+
+import nats
+from nats.aio import msg
 from invoker import invoke
-import time
+from log import safely_start_logging
+from config import settings
 
-class ProducerManager:
-    def __init__(self, group_id: str, name_server_address: str) -> None:
-        self.producer = Producer(group_id)
-        self.producer.set_name_server_address(name_server_address)
-        self.producer.start()
+tasks_termination_timeout: float = settings.tasks_termination_timeout
+request_subject: str = settings.request_subject
+response_subject_prefix: str = settings.response_subject_prefix
+broker_servers: List[str] = settings.broker.servers
 
-    def send_message(self, topic, keys, tags, body) -> SendResult:
-        msg = Message(topic)
-        msg.set_keys(keys)
-        msg.set_tags(tags)
-        msg.set_body(body)
-        sendResult = self.producer.send_sync(msg)
-        print(sendResult.status, sendResult.msg_id, sendResult.offset)
-        return sendResult
+async def error_cb(e):
+    logging.error("Error:", e)
 
-class ConsumerWithProducer:
-    def __init__(self, group_id: str, name_server_address: str, producer_manager: ProducerManager):
-        self.consumer = PushConsumer(group_id)
-        self.consumer.set_name_server_address(name_server_address)
-        self.producer_manager = producer_manager
+async def closed_cb():
+    # Wait for tasks to stop otherwise get a warning.
+    await asyncio.sleep(tasks_termination_timeout)
+    loop.stop()
 
-    def callback(self, message) -> ConsumeStatus:
-        print(message.id, message.body, message.get_property('property'))
-        context = {}
-        response = invoke(message.body, context)
-        
-        # Send response to responseTopic
-        self.producer_manager.send_message('responseTopic', '', '', response)
-        
-        return ConsumeStatus.CONSUME_SUCCESS
+async def reconnected_cb():
+    logging.info("Got reconnected to NATS...")
 
-    def start_consume_message(self):
-        self.consumer.subscribe('requestTopic', self.callback)
-        print('Start consuming messages')
-        self.consumer.start()
+async def main():
+    await safely_start_logging()
+    logging.info('Start lambda function')
 
-        while True:
-            time.sleep(3600)
+    options = {
+        "error_cb": error_cb,
+        "closed_cb": closed_cb,
+        "reconnected_cb": reconnected_cb,
+        "servers": broker_servers
+    }
+
+    js = None
+    try:
+        nc = await nats.connect(**options)
+        js = nc.jetstream()
+    except Exception as e:
+        logging.exception(e)
+
+    if not js:
+        logging.exception("JetStream wasn't initialized")
+        raise RuntimeError("JetStream wasn't initialized")
+
+    logging.info("Listening on [%s]", request_subject)
+
+    async def subscribe_handler(message: msg.Msg):
+        subject = message.subject
+        reply = message.reply
+        data = message.data.decode()
+        logging.info(
+            "Received a message on '%s %s' %s", subject, reply, data
+        )
+        start = timeit.default_timer()
+        response = invoke(data, None)
+        id = subject.split('.')[1]
+        if not id:
+            logging.warn("Can't retrieve id from %s", message.subject)
+            return
+        response_subject = f"{response_subject_prefix}.{id}"
+        logging.debug("Response to %s", response_subject)
+
+        if response:
+            await js.publish(response_subject, response)
+            await message.ack()
+            end = timeit.default_timer()
+            logging.info("Processed request %s in time %f", message, end-start)
+        else:
+            logging.warn("Response from function is None")
+
+    def signal_handler():
+        if nc.is_closed:
+            return
+        asyncio.create_task(nc.drain())
+
+    for sig in ('SIGINT', 'SIGTERM'):
+        asyncio.get_running_loop().add_signal_handler(getattr(signal, sig), signal_handler)
+
+    await js.subscribe(request_subject, cb=subscribe_handler)
+
 
 if __name__ == "__main__":
-    producer_manager = ProducerManager('webhook-adapter', '0.0.0.0:9876')
-    consumer_with_producer = ConsumerWithProducer('webhook-adapter', '0.0.0.0:9876', producer_manager)
-    consumer_with_producer.start_consume_message()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
+    try:
+        loop.run_forever()
+    finally:
+        loop.close()
